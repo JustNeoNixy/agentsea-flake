@@ -20,6 +20,34 @@
           # The CLI shells out to these (README: bash, curl, ssh, jq).
           runtimeDeps = with pkgs; [ bash curl openssh jq ];
 
+          # nixpkgs' bun can be a non-baseline x86_64 build, which dies with
+          # "Illegal instruction" on CPUs without AVX2 (e.g. Intel Ivy Bridge).
+          # Pin bun's official *baseline* build on x86_64-linux instead.
+          bun =
+            if pkgs.stdenv.hostPlatform.system == "x86_64-linux" then
+              pkgs.stdenvNoCC.mkDerivation rec {
+                pname = "bun-baseline";
+                version = "1.3.9"; # the version upstream builds cli.js with
+                src = pkgs.fetchurl {
+                  url = "https://github.com/oven-sh/bun/releases/download/bun-v${version}/bun-linux-x64-baseline.zip";
+                  hash = "sha256-EE1NA39LNeECFcBQfhd5aR85xXvZHd7v4RyteB4/xLk=";
+                };
+                nativeBuildInputs = [ pkgs.unzip pkgs.autoPatchelfHook ];
+                buildInputs = [ pkgs.openssl ];
+                dontConfigure = true;
+                dontBuild = true;
+                dontStrip = true;
+                installPhase = ''
+                  runHook preInstall
+                  install -Dm755 ./bun $out/bin/bun
+                  ln -s $out/bin/bun $out/bin/bunx
+                  runHook postInstall
+                '';
+                meta.mainProgram = "bun";
+              }
+            else
+              pkgs.bun;
+
           agentsea = pkgs.stdenvNoCC.mkDerivation {
             pname = "agentsea";
             inherit (source) version;
@@ -38,7 +66,7 @@
               # cli.js is a self-contained `--target bun` bundle. The built-in
               # self-updater can't write to the Nix store, so switch it off;
               # updates arrive via sources.json instead.
-              makeWrapper ${lib.getExe pkgs.bun} $out/bin/agentsea \
+              makeWrapper ${lib.getExe bun} $out/bin/agentsea \
                 --add-flags $out/lib/agentsea/cli.js \
                 --set-default AGENTSEA_NO_UPDATE_CHECK 1 \
                 --set-default AGENTSEA_NO_AUTO_UPDATE 1 \
@@ -57,7 +85,7 @@
           };
         in
         {
-          inherit agentsea;
+          inherit agentsea bun;
           default = agentsea;
         });
 
@@ -81,7 +109,8 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [ bun bash curl openssh jq ];
+          packages = [ self.packages.${pkgs.stdenv.hostPlatform.system}.bun ]
+          ++ (with pkgs; [ bash curl openssh jq ]);
         };
       });
     };
