@@ -93,6 +93,7 @@ To update by hand in this repo:
 
 - AgentSea's built-in self-updater is disabled in the wrapper (`AGENTSEA_NO_UPDATE_CHECK` and `AGENTSEA_NO_AUTO_UPDATE`), because the Nix store is read-only. Updates come through this flake instead. You will not see "Update available" prompts.
 - On x86_64-linux the flake pins bun's official *baseline* build instead of nixpkgs' bun, so it also runs on older CPUs without AVX2 (a non-baseline bun dies with `Illegal instruction`).
+- Older CPUs without AVX2: Claude Code 2.1.113+ ships a native binary that crashes with `Illegal instruction` on them. `packages.<system>.claude-code-js` is Claude Code 2.1.112, the last pure-JS build, which only needs node. Add it alongside `agentsea`. It is proprietary software, redistributed unmodified from the npm registry. AgentSea sees `claude` on `PATH` and skips its own installer, and the wrapper turns `claude install` into a no-op so the native build is never fetched.
 - The wrapper puts `bash`, `curl`, `openssh` and `jq` on `PATH`, since the CLI uses them.
 - Upstream publishes the CLI under a rolling `cli-latest` release tag. If a new release lands before the daily workflow runs, builds fail with a hash mismatch until the next update. Running `./scripts/update.sh` fixes it.
 - Agent bootstrap scripts are fetched by the CLI at runtime from upstream, so they are not pinned by this flake.

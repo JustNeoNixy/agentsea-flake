@@ -48,6 +48,49 @@
             else
               pkgs.bun;
 
+          # Claude Code 2.1.113+ ships a native (bun-compiled) binary that needs AVX2 and
+          # dies with "Illegal instruction" on older CPUs. 2.1.112 is the last pure-JS
+          # build: it only needs node. Opt-in: add this package next to agentsea if
+          # your CPU has no AVX2.
+          claude-code-js = pkgs.stdenvNoCC.mkDerivation {
+            pname = "claude-code-js";
+            version = "2.1.112";
+
+            src = pkgs.fetchurl {
+              url = "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.112.tgz";
+              hash = "sha256-hDeZaepToOX9IxqPd96+THyxfdlx9ICdENM/muyl3gk=";
+            };
+            sourceRoot = "package";
+            dontBuild = true;
+
+            launcher = pkgs.writeText "claude-launcher" ''
+              #!${pkgs.runtimeShell}
+              # AgentSea runs `claude install --force`, which would fetch the native
+              # (AVX2-only) build into ~/.local/bin and shadow this one. Make it a no-op.
+              if [ "''${1:-}" = install ]; then exit 0; fi
+              export DISABLE_AUTOUPDATER=1 USE_BUILTIN_RIPGREP=0
+              export PATH="${lib.makeBinPath [ pkgs.ripgrep ]}:$PATH"
+              exec ${pkgs.nodejs_22}/bin/node @out@/lib/claude-code/cli.js "$@"
+            '';
+
+            installPhase = ''
+              runHook preInstall
+              mkdir -p $out/lib/claude-code $out/bin
+              cp -r . $out/lib/claude-code
+              substitute $launcher $out/bin/claude --subst-var out
+              chmod +x $out/bin/claude
+              runHook postInstall
+            '';
+
+            meta = {
+              description = "Claude Code 2.1.112 (last pure-JS build, runs on CPUs without AVX2)";
+              homepage = "https://github.com/anthropics/claude-code";
+              # Proprietary (see LICENSE.md in the package). No meta.license is set so
+              # the flake's own nixpkgs instance doesn't refuse to evaluate it as unfree.
+              mainProgram = "claude";
+            };
+          };
+
           agentsea = pkgs.stdenvNoCC.mkDerivation {
             pname = "agentsea";
             inherit (source) version;
@@ -85,7 +128,7 @@
           };
         in
         {
-          inherit agentsea bun;
+          inherit agentsea bun claude-code-js;
           default = agentsea;
         });
 
